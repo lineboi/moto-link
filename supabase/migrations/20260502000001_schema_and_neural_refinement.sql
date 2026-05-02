@@ -16,9 +16,6 @@
 -- SECTION A: TABLE SCHEMA, INDEXES & ROW LEVEL SECURITY
 -- =============================================================================
 
--- Enable UUID generation (required by uuid_generate_v4() defaults)
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
 
 -- ---------------------------------------------------------------------------
 -- A1. vernacular_landmarks
@@ -27,7 +24,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- precise GPS coordinates. confidence_score is updated automatically by the
 -- Neural Refinement trigger below.
 CREATE TABLE IF NOT EXISTS vernacular_landmarks (
-    id                UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id                UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     raw_phrase        TEXT         NOT NULL,
     language          VARCHAR(10)  NOT NULL CHECK (language IN ('rw', 'en')),
     target_lat        DOUBLE PRECISION NOT NULL,
@@ -52,7 +49,7 @@ CREATE INDEX IF NOT EXISTS idx_phrase_search
 -- Records every attempted route. Feeds the Neural Refinement engine.
 -- status CONFIRMED fires the DB trigger that boosts confidence_score.
 CREATE TABLE IF NOT EXISTS navigation_sessions (
-    id                  UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id                  UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     landmark_id         UUID         REFERENCES vernacular_landmarks(id),
     driver_id           UUID,
     start_lat           DOUBLE PRECISION,
@@ -71,7 +68,7 @@ CREATE TABLE IF NOT EXISTS navigation_sessions (
 -- ---------------------------------------------------------------------------
 -- Tracks when the system fails to provide the correct destination.
 CREATE TABLE IF NOT EXISTS qa_flag_logs (
-    id                    UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id                    UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     session_id            UUID         REFERENCES navigation_sessions(id),
     landmark_id           UUID         REFERENCES vernacular_landmarks(id),
     error_type            VARCHAR(50)
@@ -88,7 +85,7 @@ CREATE TABLE IF NOT EXISTS qa_flag_logs (
 -- Captures raw transcripts → confirmed coordinates for future fine-tuning.
 -- Inserted fire-and-forget by the process-audio Edge Function on every trip.
 CREATE TABLE IF NOT EXISTS reinforcement_dataset (
-    id                  UUID         PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id                  UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     raw_transcript      TEXT         NOT NULL,
     extracted_landmark  TEXT,
     target_lat          DOUBLE PRECISION,
@@ -104,7 +101,7 @@ CREATE TABLE IF NOT EXISTS reinforcement_dataset (
 -- Static reference table for well-known Kigali landmarks.
 -- The Edge Function cross-references this during DB enrichment.
 CREATE TABLE IF NOT EXISTS known_osm_landmarks (
-    id           UUID  PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id           UUID  PRIMARY KEY DEFAULT gen_random_uuid(),
     formal_name  TEXT,
     road_sign    TEXT,
     lat          DOUBLE PRECISION,
@@ -160,23 +157,6 @@ CREATE POLICY "anon_select_osm"
 -- =============================================================================
 -- SECTION B: NEURAL REFINEMENT TRIGGER
 -- =============================================================================
--- This trigger is the AI self-learning engine described in databaseschema.md.
---
--- Every time a navigation_sessions row is INSERTED:
---   • CONFIRMED → +0.05 confidence (max 1.0), +1 successful_routes
---               → This fires when the driver confirms they arrived correctly.
---               → The landmark becomes MORE prominent in future searches.
---
---   • REJECTED  → -0.10 confidence (min 0.0)
---               → Driver immediately rejected the result.
---               → The landmark drops significantly from future results.
---
---   • ABANDONED → -0.02 confidence (min 0.0)
---               → Driver started the trip but cancelled mid-route.
---               → Mild penalty — could be driver error, not system error.
---
--- NULL landmark_id (e.g. AI-estimate-only results) are skipped gracefully.
--- =============================================================================
 
 CREATE OR REPLACE FUNCTION update_landmark_confidence()
 RETURNS TRIGGER AS $$
@@ -222,16 +202,3 @@ CREATE TRIGGER trigger_refine_confidence
     AFTER INSERT ON navigation_sessions
     FOR EACH ROW
     EXECUTE FUNCTION update_landmark_confidence();
-
-
--- =============================================================================
--- MIGRATION COMPLETE
--- =============================================================================
--- Verify with:
---   SELECT table_name FROM information_schema.tables
---     WHERE table_schema = 'public';
---
---   SELECT trigger_name, event_object_table
---     FROM information_schema.triggers
---     WHERE trigger_schema = 'public';
--- =============================================================================

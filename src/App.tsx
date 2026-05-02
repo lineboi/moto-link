@@ -15,6 +15,7 @@ import { VoiceRecordButton } from '@/features/voice/VoiceRecordButton'
 import { ResultsStack } from '@/features/voice/ResultsStack'
 import { useNlpPipeline } from '@/features/voice/useNlpPipeline'
 import { isVoiceCaptureSupported } from '@/features/voice/useVoiceRecorder'
+import { MapView } from '@/features/map/MapView'
 import {
   useLanguage,
   useSearchState,
@@ -64,6 +65,7 @@ const STATUS_TEXT: Record<SearchState, Record<Language, string>> = {
   RESULTS_FOUND: { rw: 'Hari aho nahabonye!', en: 'Match found!' },
   NO_MATCH: { rw: 'Sinabashije gusobanura', en: "Couldn't understand that" },
   RETRYING: { rw: 'Ndongeye kugerageza', en: 'Trying again' },
+  NAVIGATING: { rw: 'Urugendo rurimo…', en: 'Navigating…' },
 }
 
 const STATUS_TONE: Record<SearchState, string> = {
@@ -73,6 +75,7 @@ const STATUS_TONE: Record<SearchState, string> = {
   RESULTS_FOUND: 'signal.success',
   NO_MATCH: 'signal.warning',
   RETRYING: 'signal.warning',
+  NAVIGATING: 'signal.success',
 }
 
 // ─── Sub-components ─────────────────────────────────────────────
@@ -269,8 +272,16 @@ function App() {
   // Mount NLP pipeline — watches store, fires when searchState → 'PROCESSING'
   useNlpPipeline()
 
-  const language = useLanguage()
   const searchState = useSearchState()
+
+  // Full-screen map during navigation — replaces the voice UI entirely.
+  // MapView mounts useGeolocation + useRouteFetcher internally so GPS and
+  // OSRM only run while the user is actively navigating.
+  if (searchState === 'NAVIGATING') {
+    return <MapView />
+  }
+
+  const language = useLanguage()
   const t = COPY[language]
   const supported = isVoiceCaptureSupported()
 

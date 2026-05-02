@@ -1,5 +1,10 @@
 import { Box, Badge, HStack, Heading, Stack, Text, VStack } from '@chakra-ui/react'
-import { useLandmarkResults, useLanguage, type LandmarkResult } from '@/store/useSessionStore'
+import {
+  useLandmarkResults,
+  useLanguage,
+  useSessionStore,
+  type LandmarkResult,
+} from '@/store/useSessionStore'
 
 // ─── Bilingual labels ─────────────────────────────────────────────
 const LABELS = {
@@ -7,8 +12,9 @@ const LABELS = {
     dbVerified: 'Bimenywe',
     aiEstimate: 'Icyiringiro',
     confidence: 'Kwizera',
-    roadSign: 'Izina ry\'ibarabara',
+    roadSign: "Izina ry'ibarabara",
     noResults: 'Nta bisubizo bibonetse',
+    selectHint: 'Kanda ho kugira ngo uhitemo',
   },
   en: {
     dbVerified: 'DB Verified',
@@ -16,6 +22,7 @@ const LABELS = {
     confidence: 'Confidence',
     roadSign: 'Road sign',
     noResults: 'No results found',
+    selectHint: 'Tap to navigate here',
   },
 } as const
 
@@ -23,19 +30,11 @@ const LABELS = {
 function ConfidenceBar({ value }: { value: number }) {
   const pct = Math.round(Math.max(0, Math.min(1, value)) * 100)
   const barColor =
-    pct >= 75 ? 'signal.success'
-    : pct >= 45 ? 'accent.solid'
-    : 'signal.warning'
+    pct >= 75 ? 'signal.success' : pct >= 45 ? 'accent.solid' : 'signal.warning'
 
   return (
     <HStack gap="3" w="full" align="center">
-      <Box
-        flex="1"
-        bg="bg.muted"
-        borderRadius="full"
-        h="2"
-        overflow="hidden"
-      >
+      <Box flex="1" bg="bg.muted" borderRadius="full" h="2" overflow="hidden">
         <Box
           bg={barColor}
           h="full"
@@ -96,6 +95,20 @@ function ResultCard({
 }) {
   const labels = LABELS[language]
 
+  const handleSelect = () => {
+    const store = useSessionStore.getState()
+    store.setSelectedLandmark(result)
+    store.setDestinationLocation({ lat: result.lat, lng: result.lng })
+    store.setSearchState('NAVIGATING')
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      handleSelect()
+    }
+  }
+
   return (
     <Box
       as="article"
@@ -109,15 +122,18 @@ function ResultCard({
       role="button"
       tabIndex={0}
       cursor="pointer"
+      onClick={handleSelect}
+      onKeyDown={handleKeyDown}
       _hover={{ bg: 'bg.muted', borderColor: 'accent.solid', transform: 'scale(1.01)' }}
+      _active={{ transform: 'scale(0.98)' }}
       _focusVisible={{ outline: 'none', boxShadow: '0 0 0 3px rgba(255,179,0,0.6)' }}
       transition="all 150ms ease"
-      aria-label={`${result.rank}. ${result.landmark}, ${Math.round(result.confidence * 100)}% confidence`}
+      aria-label={`${result.rank}. ${result.landmark}, ${Math.round(result.confidence * 100)}% confidence. ${labels.selectHint}.`}
     >
       <Stack gap="3">
-        {/* Header row: rank + source badge */}
+        {/* Header row: rank + landmark name + source badge */}
         <HStack justify="space-between" align="flex-start" wrap="wrap" gap="2">
-          <HStack gap="3" align="center">
+          <HStack gap="3" align="center" flex="1" minW="0">
             <Box
               w="8"
               h="8"
@@ -139,6 +155,9 @@ function ResultCard({
               fontWeight="extrabold"
               color="fg"
               lineHeight="shorter"
+              overflow="hidden"
+              textOverflow="ellipsis"
+              whiteSpace="nowrap"
             >
               {result.landmark}
             </Heading>
@@ -151,7 +170,13 @@ function ResultCard({
           <HStack gap="4" wrap="wrap">
             {result.road_sign && (
               <HStack gap="1.5">
-                <Text fontSize="xs" color="fg.subtle" fontWeight="bold" letterSpacing="wide" textTransform="uppercase">
+                <Text
+                  fontSize="xs"
+                  color="fg.subtle"
+                  fontWeight="bold"
+                  letterSpacing="wide"
+                  textTransform="uppercase"
+                >
                   {labels.roadSign}
                 </Text>
                 <Text
@@ -188,6 +213,18 @@ function ResultCard({
           </Text>
           <ConfidenceBar value={result.confidence} />
         </Stack>
+
+        {/* Navigate CTA hint */}
+        <Text
+          fontSize="xs"
+          color="accent.fg"
+          fontWeight="bold"
+          letterSpacing="wide"
+          textAlign="right"
+          textTransform="uppercase"
+        >
+          {labels.selectHint} →
+        </Text>
       </Stack>
     </Box>
   )

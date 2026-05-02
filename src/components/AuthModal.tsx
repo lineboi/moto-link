@@ -28,7 +28,6 @@ type FormState = 'idle' | 'loading' | 'success' | 'error'
 function validate(email: string, password: string, mode: AuthMode) {
   const errors: { email?: string; password?: string } = {}
   if (!email.trim()) errors.email = 'Email is required'
-  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'Enter a valid email'
   if (!password) errors.password = 'Password is required'
   else if (password.length < 6) errors.password = 'Minimum 6 characters'
   if (mode === 'signup' && password.length > 0 && password.length < 8)

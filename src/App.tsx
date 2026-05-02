@@ -10,8 +10,10 @@ import {
   Text,
   VStack,
 } from '@chakra-ui/react'
+import { useState } from 'react'
 import { VoiceRecordButton } from '@/features/voice/VoiceRecordButton'
 import { ColorModeSwitcher } from '@/components/ColorModeSwitcher'
+import { AuthModal } from '@/components/AuthModal'
 import { ResultsStack } from '@/features/voice/ResultsStack'
 import { useNlpPipeline } from '@/features/voice/useNlpPipeline'
 import { isVoiceCaptureSupported } from '@/features/voice/useVoiceRecorder'
@@ -281,6 +283,7 @@ function App() {
 
   const isProcessing = searchState === 'PROCESSING'
   const hasResults = searchState === 'RESULTS_FOUND'
+  const [authOpen, setAuthOpen] = useState(false)
 
   // Full-screen map during navigation — MapView mounts useGeolocation +
   // useRouteFetcher internally so GPS and OSRM only run while navigating.
@@ -315,7 +318,26 @@ function App() {
         <Heading as="h1" size="xl" letterSpacing="tight" lineHeight="shorter">
           Moto-Link
         </Heading>
-        <ColorModeSwitcher />
+        <HStack gap="2">
+          <Button
+            size="sm"
+            variant="outline"
+            borderColor="accent.solid"
+            color="accent.solid"
+            fontWeight="bold"
+            borderRadius="full"
+            px="4"
+            minH="touchTarget"
+            onClick={() => setAuthOpen(true)}
+            _hover={{ bg: 'accent.muted' }}
+          >
+            Login / Profile
+          </Button>
+          <ColorModeSwitcher />
+        </HStack>
+
+        {/* Auth modal — floats over the page without redirect */}
+        <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} />
       </Flex>
 
       {/* ── Main content ──────────────────────────────────────── */}

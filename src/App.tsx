@@ -16,6 +16,7 @@ import { ResultsStack } from '@/features/voice/ResultsStack'
 import { useNlpPipeline } from '@/features/voice/useNlpPipeline'
 import { isVoiceCaptureSupported } from '@/features/voice/useVoiceRecorder'
 import { MapView } from '@/features/map/MapView'
+import { OfflineBanner } from '@/components/OfflineBanner'
 import {
   useLanguage,
   useSearchState,
@@ -274,13 +275,6 @@ function App() {
 
   const searchState = useSearchState()
 
-  // Full-screen map during navigation — replaces the voice UI entirely.
-  // MapView mounts useGeolocation + useRouteFetcher internally so GPS and
-  // OSRM only run while the user is actively navigating.
-  if (searchState === 'NAVIGATING') {
-    return <MapView />
-  }
-
   const language = useLanguage()
   const t = COPY[language]
   const supported = isVoiceCaptureSupported()
@@ -288,8 +282,23 @@ function App() {
   const isProcessing = searchState === 'PROCESSING'
   const hasResults = searchState === 'RESULTS_FOUND'
 
+  // Full-screen map during navigation — MapView mounts useGeolocation +
+  // useRouteFetcher internally so GPS and OSRM only run while navigating.
+  // OfflineBanner sits above it so the driver always sees network status.
+  if (searchState === 'NAVIGATING') {
+    return (
+      <>
+        <OfflineBanner />
+        <MapView />
+      </>
+    )
+  }
+
   return (
-    <Flex direction="column" minH="100vh" bg="bg" color="fg">
+    <>
+      {/* OfflineBanner is fixed-position and overlays all content */}
+      <OfflineBanner />
+      <Flex direction="column" minH="100vh" bg="bg" color="fg">
       {/* ── Top bar ───────────────────────────────────────────── */}
       <Flex
         as="header"
@@ -371,6 +380,7 @@ function App() {
         </Container>
       </Flex>
     </Flex>
+    </>
   )
 }
 

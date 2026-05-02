@@ -1,6 +1,14 @@
 import { create, type StateCreator } from 'zustand'
-import { devtools } from 'zustand/middleware'
+import { devtools, persist, createJSONStorage } from 'zustand/middleware'
+import localforage from 'localforage'
 import type { Language } from '@/types/database'
+
+// ─── Configure localForage (IndexedDB → WebSQL → localStorage fallback) ──
+localforage.config({
+  name: 'moto-link',
+  storeName: 'session_v1',
+  description: 'Moto-Link · Offline landmark cache — Lyftathon Kigali 2026',
+})
 
 // ─── Pipeline types (mirrors Edge Function response shape) ────────
 export type ResultSource = 'db_verified' | 'ai_estimate'
@@ -58,6 +66,15 @@ export type SearchState =
   | 'RETRYING'
   | 'NAVIGATING'
 
+// ─── Persisted slice (what survives app restarts) ─────────────────
+// Only plain JSON-serializable fields that are useful when offline.
+// Blobs, GPS positions, active trips, and recording state are
+// intentionally excluded — they must reset on every load.
+export interface PersistedSlice {
+  landmarkResults: LandmarkResult[]
+  language: Language
+}
+
 export interface SessionState {
   // ─── Recording ────────────────────────────────────────────────
   isRecording: boolean
@@ -70,7 +87,7 @@ export interface SessionState {
   transcript: string | null
   previousTranscript: string | null
   confidenceScore: number | null
-  landmarkResults: LandmarkResult[]
+  landmarkResults: LandmarkResult[]        // ← persisted to IndexedDB
 
   // ─── Navigation & map ─────────────────────────────────────────
   selectedLandmark: LandmarkResult | null
@@ -85,7 +102,7 @@ export interface SessionState {
 
   // ─── Session machine ──────────────────────────────────────────
   searchState: SearchState
-  language: Language
+  language: Language                       // ← persisted to IndexedDB
   error: string | null
 
   // ─── Recording actions ────────────────────────────────────────
@@ -147,7 +164,7 @@ const initialState = {
 
 const sessionStore: StateCreator<
   SessionState,
-  [['zustand/devtools', never]],
+  [['zustand/devtools', never], ['zustand/persist', unknown]],
   []
 > = (set) => ({
   ...initialState,
@@ -227,8 +244,6 @@ const sessionStore: StateCreator<
   setRouteMeta: (routeMeta) =>
     set({ routeMeta }, false, 'session/setRouteMeta'),
 
-  // clearRoute also resets trip state so cancelling before "Start Trip"
-  // leaves no ghost tripStatus behind.
   clearRoute: () =>
     set(
       {
@@ -247,11 +262,7 @@ const sessionStore: StateCreator<
   // ─── Trip lifecycle ───────────────────────────────────────────
   startTrip: () =>
     set(
-      {
-        tripStatus: 'STARTED',
-        tripStartedAt: Date.now(),
-        error: null,
-      },
+      { tripStatus: 'STARTED', tripStartedAt: Date.now(), error: null },
       false,
       'session/startTrip',
     ),
@@ -259,14 +270,9 @@ const sessionStore: StateCreator<
   pauseTrip: () =>
     set({ tripStatus: 'PAUSED' }, false, 'session/pauseTrip'),
 
-  // resumeTrip does NOT update tripStartedAt — cumulative trip time is
-  // preserved so the session log captures total elapsed time, not just
-  // the last active leg.
   resumeTrip: () =>
     set({ tripStatus: 'STARTED' }, false, 'session/resumeTrip'),
 
-  // endTrip merges clearRoute logic in one atomic update so there is no
-  // intermediate render with a half-reset state.
   endTrip: () =>
     set(
       {
@@ -299,10 +305,23 @@ const sessionStore: StateCreator<
 })
 
 export const useSessionStore = create<SessionState>()(
-  devtools(sessionStore, {
-    name: 'moto-link/session',
-    enabled: import.meta.env.DEV,
-  }),
+  devtools(
+    persist(sessionStore, {
+      name: 'moto-link-cache',
+      storage: createJSONStorage(() => localforage),
+      // Only persist plain JSON fields that are useful offline.
+      // audioBlob (Blob), GPS positions, and active trip state are
+      // excluded — they reset to initialState on every app load.
+      partialize: (state): PersistedSlice => ({
+        landmarkResults: state.landmarkResults,
+        language: state.language,
+      }),
+    }),
+    {
+      name: 'moto-link/session',
+      enabled: import.meta.env.DEV,
+    },
+  ),
 )
 
 // ─── Selector hooks (avoid full-store re-renders) ──────────────

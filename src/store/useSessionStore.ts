@@ -2,6 +2,22 @@ import { create, type StateCreator } from 'zustand'
 import { devtools } from 'zustand/middleware'
 import type { Language } from '@/types/database'
 
+// ─── Pipeline types (mirrors Edge Function response shape) ────────
+export type ResultSource = 'db_verified' | 'ai_estimate'
+
+export interface LandmarkResult {
+  rank: number
+  landmark: string
+  road_sign: string | null
+  directional_slang: string | null
+  confidence: number
+  lat: number
+  lng: number
+  source: ResultSource
+  landmark_id: string | null
+}
+
+// ─── SearchState machine ──────────────────────────────────────────
 export type SearchState =
   | 'IDLE'
   | 'LISTENING'
@@ -22,6 +38,7 @@ export interface SessionState {
   transcript: string | null
   previousTranscript: string | null
   confidenceScore: number | null
+  landmarkResults: LandmarkResult[]
 
   // ─── Session machine ──────────────────────────────────────────
   searchState: SearchState
@@ -38,6 +55,7 @@ export interface SessionState {
   cancelRecording: () => void
   setTranscript: (transcript: string) => void
   setConfidenceScore: (score: number) => void
+  setLandmarkResults: (results: LandmarkResult[]) => void
   setLanguage: (language: Language) => void
   setSearchState: (state: SearchState) => void
   setError: (message: string | null) => void
@@ -53,6 +71,7 @@ const initialState = {
   transcript: null,
   previousTranscript: null,
   confidenceScore: null,
+  landmarkResults: [] as LandmarkResult[],
   searchState: 'IDLE' as SearchState,
   language: 'rw' as Language,
   error: null,
@@ -76,6 +95,7 @@ const sessionStore: StateCreator<
         previousTranscript: s.transcript,
         transcript: null,
         confidenceScore: null,
+        landmarkResults: [],
         searchState: 'LISTENING',
         error: null,
       }),
@@ -117,6 +137,9 @@ const sessionStore: StateCreator<
   setConfidenceScore: (confidenceScore) =>
     set({ confidenceScore }, false, 'session/setConfidenceScore'),
 
+  setLandmarkResults: (landmarkResults) =>
+    set({ landmarkResults }, false, 'session/setLandmarkResults'),
+
   setLanguage: (language) => set({ language }, false, 'session/setLanguage'),
 
   setSearchState: (searchState) =>
@@ -151,6 +174,8 @@ export const useAudioMeta = () =>
 export const useTranscript = () => useSessionStore((s) => s.transcript)
 export const useConfidenceScore = () =>
   useSessionStore((s) => s.confidenceScore)
+export const useLandmarkResults = () =>
+  useSessionStore((s) => s.landmarkResults)
 export const useSearchState = () => useSessionStore((s) => s.searchState)
 export const useLanguage = () => useSessionStore((s) => s.language)
 export const useSessionError = () => useSessionStore((s) => s.error)

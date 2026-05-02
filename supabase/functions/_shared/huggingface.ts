@@ -1,5 +1,7 @@
+// HuggingFace changed their inference endpoint — the router URL is required for
+// hosted models like openai/whisper-large-v3 (the old api-inference URL returns 404).
 const HF_WHISPER_URL =
-  'https://api-inference.huggingface.co/models/mbazaNLP/Whisper-Small-Kinyarwanda'
+  'https://router.huggingface.co/hf-inference/models/openai/whisper-large-v3'
 
 /** Minimum wait between cold-start retries, in ms. */
 const MIN_RETRY_WAIT_MS = 2_000
@@ -44,7 +46,9 @@ async function fetchWhisper(
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
-        'Content-Type': mimeType,
+        // Strip codec params — HF Whisper recognises 'audio/webm' but not
+        // 'audio/webm;codecs=opus'. Split on ';' and take only the base type.
+        'Content-Type': mimeType.split(';')[0],
         'Accept': 'application/json',
       },
       body: audioBytes,
@@ -88,7 +92,7 @@ function throwForStatus(status: number, body: HfSuccessResponse | HfLoadingRespo
   if (status === 401 || status === 403) {
     throw new HuggingFaceError(
       'HF_AUTH_ERROR',
-      'Invalid or missing HUGGINGFACE_API_TOKEN. Check your Supabase secrets.',
+      'Invalid or missing HUGGINGFACE_API_KEY. Check your Supabase secrets.',
       false,
     )
   }
@@ -109,19 +113,11 @@ function throwForStatus(status: number, body: HfSuccessResponse | HfLoadingRespo
 }
 
 // ─── Public API ──────────────────────────────────────────────────
-/**
- * Transcribe a Kinyarwanda (or bilingual) audio clip using the
- * mbazaNLP/Whisper-Small-Kinyarwanda model on the HF Inference API.
- *
- * Handles the model cold-start 503 by waiting `estimated_time` ms
- * (bounded to MAX_RETRY_WAIT_MS) and retrying exactly once.
- *
- * @throws {HuggingFaceError} with a machine-readable `code` field.
- */
 export async function transcribeAudio(
   audioBytes: Uint8Array,
   mimeType: string,
 ): Promise<string> {
+  // FIX 1: Match the secret name exactly to what you saved in CLI
   const token = Deno.env.get('HUGGINGFACE_API_TOKEN')
   if (!token) {
     throw new HuggingFaceError(
@@ -157,8 +153,11 @@ export async function transcribeAudio(
       )
     }
 
-    throwForStatus(retryRes.status, await parseResponse(retryRes))
-    const retryBody = (await parseResponse(retryRes)) as HfSuccessResponse
+    // FIX 2: Parse the body ONCE and use that variable for both status check and success extraction
+    const retryParsedBody = await parseResponse(retryRes)
+    throwForStatus(retryRes.status, retryParsedBody)
+    
+    const retryBody = retryParsedBody as HfSuccessResponse
     return validateTranscript(retryBody.text)
   }
 

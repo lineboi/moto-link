@@ -13,7 +13,8 @@ interface ProcessAudioResponse {
   results: LandmarkResult[]
 }
 
-const PIPELINE_TIMEOUT_MS = 30_000
+// 75s to accommodate HuggingFace free-tier Whisper cold-start (~60s worst case)
+const PIPELINE_TIMEOUT_MS = 75_000
 
 export function useNlpPipeline(): void {
   const audioBlob = useAudioBlob()
@@ -70,12 +71,26 @@ export function useNlpPipeline(): void {
         return
       }
 
-      // Supabase FunctionsHttpError — non-2xx from the Edge Function
+      // Supabase FunctionsHttpError — non-2xx from the Edge Function.
+      // The SDK's generic .message is "Edge Function returned a non-2xx status code".
+      // Read the actual JSON body from the Response context to get our custom
+      // {error, message, retryable} payload and surface a meaningful error.
       if (invokeError) {
-        const msg =
-          invokeError instanceof Error
-            ? invokeError.message
-            : 'NLP pipeline returned an error.'
+        let msg = 'NLP pipeline returned an error.'
+        try {
+          // FunctionsHttpError exposes the raw Response on .context
+          const ctx = (invokeError as Record<string, unknown>).context
+          if (ctx && typeof (ctx as Response).json === 'function') {
+            const body = await (ctx as Response).json() as Record<string, unknown>
+            if (typeof body.message === 'string') msg = body.message
+            else if (typeof body.error === 'string') msg = body.error
+          } else if (invokeError instanceof Error && invokeError.message &&
+            !invokeError.message.includes('non-2xx')) {
+            msg = invokeError.message
+          }
+        } catch {
+          // ignore parse failure — fall back to generic message
+        }
         freshStore.setError(msg)
         return
       }

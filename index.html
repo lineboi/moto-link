@@ -5,14 +5,13 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#06122A" />
-    <meta name="color-scheme" content="dark" />
     <title>Moto-Link · Kigali</title>
     <style>
+      /* Pre-paint default: dark navy prevents flash before React hydrates */
       html, body { background: #06122A; color: #FFFFFF; margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-      html { color-scheme: dark; }
     </style>
   </head>
-  <body class="dark">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

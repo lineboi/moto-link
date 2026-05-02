@@ -11,6 +11,7 @@ import {
   VStack,
 } from '@chakra-ui/react'
 import { VoiceRecordButton } from '@/features/voice/VoiceRecordButton'
+import { ColorModeSwitcher } from '@/components/ColorModeSwitcher'
 import { ResultsStack } from '@/features/voice/ResultsStack'
 import { useNlpPipeline } from '@/features/voice/useNlpPipeline'
 import { isVoiceCaptureSupported } from '@/features/voice/useVoiceRecorder'
@@ -314,6 +315,7 @@ function App() {
         <Heading as="h1" size="xl" letterSpacing="tight" lineHeight="shorter">
           Moto-Link
         </Heading>
+        <ColorModeSwitcher />
       </Flex>
 
       {/* ── Main content ──────────────────────────────────────── */}

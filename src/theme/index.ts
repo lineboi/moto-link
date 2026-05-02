@@ -106,9 +106,10 @@ const config = defineConfig({
     semanticTokens: {
       colors: {
         bg: {
-          DEFAULT: { value: { _light: '{colors.white}', _dark: '{colors.navy.900}' } },
-          subtle: { value: { _light: '{colors.gray.50}', _dark: '{colors.navy.800}' } },
-          muted: { value: { _light: '{colors.gray.100}', _dark: '{colors.navy.700}' } },
+          // Light: soft off-white (#F8FAFC) so it's easy on the eyes outdoors
+          DEFAULT: { value: { _light: '#F8FAFC', _dark: '{colors.navy.900}' } },
+          subtle: { value: { _light: '{colors.gray.100}', _dark: '{colors.navy.800}' } },
+          muted: { value: { _light: '{colors.gray.200}', _dark: '{colors.navy.700}' } },
           panel: { value: { _light: '{colors.white}', _dark: '{colors.navy.800}' } },
           inverted: { value: { _light: '{colors.navy.900}', _dark: '{colors.white}' } },
         },

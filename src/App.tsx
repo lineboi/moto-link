@@ -10,7 +10,6 @@ import {
   Text,
   VStack,
 } from '@chakra-ui/react'
-import { ConnectionStatusBadge } from '@/components/ConnectionStatusBadge'
 import { VoiceRecordButton } from '@/features/voice/VoiceRecordButton'
 import { ResultsStack } from '@/features/voice/ResultsStack'
 import { useNlpPipeline } from '@/features/voice/useNlpPipeline'
@@ -312,15 +311,9 @@ function App() {
         borderColor="border"
         bg="bg.subtle"
       >
-        <Stack gap="0">
-          <Text fontSize="2xs" color="accent.fg" fontWeight="bold" letterSpacing="wide" textTransform="uppercase">
-            {t.tagline}
-          </Text>
-          <Heading as="h1" size="xl" letterSpacing="tight" lineHeight="shorter">
-            Moto-Link
-          </Heading>
-        </Stack>
-        <ConnectionStatusBadge />
+        <Heading as="h1" size="xl" letterSpacing="tight" lineHeight="shorter">
+          Moto-Link
+        </Heading>
       </Flex>
 
       {/* ── Main content ──────────────────────────────────────── */}

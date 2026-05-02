@@ -45,6 +45,9 @@ export interface RouteGeoJson {
   properties: Record<string, unknown>
 }
 
+// ─── Trip lifecycle types ─────────────────────────────────────────
+export type TripStatus = 'IDLE' | 'STARTED' | 'PAUSED'
+
 // ─── SearchState machine ──────────────────────────────────────────
 export type SearchState =
   | 'IDLE'
@@ -76,12 +79,16 @@ export interface SessionState {
   routeGeoJson: RouteGeoJson | null
   routeMeta: RouteMeta | null
 
+  // ─── Trip lifecycle ────────────────────────────────────────────
+  tripStatus: TripStatus
+  tripStartedAt: number | null
+
   // ─── Session machine ──────────────────────────────────────────
   searchState: SearchState
   language: Language
   error: string | null
 
-  // ─── Actions ──────────────────────────────────────────────────
+  // ─── Recording actions ────────────────────────────────────────
   startRecording: () => void
   stopRecording: (payload: {
     blob: Blob
@@ -89,15 +96,27 @@ export interface SessionState {
     durationMs: number
   }) => void
   cancelRecording: () => void
+
+  // ─── NLP actions ──────────────────────────────────────────────
   setTranscript: (transcript: string) => void
   setConfidenceScore: (score: number) => void
   setLandmarkResults: (results: LandmarkResult[]) => void
+
+  // ─── Navigation actions ───────────────────────────────────────
   setSelectedLandmark: (landmark: LandmarkResult | null) => void
   setCurrentLocation: (location: GeoPosition) => void
   setDestinationLocation: (location: DestinationPosition) => void
   setRouteGeoJson: (route: RouteGeoJson | null) => void
   setRouteMeta: (meta: RouteMeta | null) => void
   clearRoute: () => void
+
+  // ─── Trip lifecycle actions ───────────────────────────────────
+  startTrip: () => void
+  pauseTrip: () => void
+  resumeTrip: () => void
+  endTrip: () => void
+
+  // ─── Global actions ───────────────────────────────────────────
   setLanguage: (language: Language) => void
   setSearchState: (state: SearchState) => void
   setError: (message: string | null) => void
@@ -119,6 +138,8 @@ const initialState = {
   destinationLocation: null,
   routeGeoJson: null,
   routeMeta: null,
+  tripStatus: 'IDLE' as TripStatus,
+  tripStartedAt: null,
   searchState: 'IDLE' as SearchState,
   language: 'rw' as Language,
   error: null,
@@ -131,6 +152,7 @@ const sessionStore: StateCreator<
 > = (set) => ({
   ...initialState,
 
+  // ─── Recording ───────────────────────────────────────────────
   startRecording: () =>
     set(
       (s) => ({
@@ -179,6 +201,7 @@ const sessionStore: StateCreator<
       'session/cancelRecording',
     ),
 
+  // ─── NLP ─────────────────────────────────────────────────────
   setTranscript: (transcript) =>
     set({ transcript }, false, 'session/setTranscript'),
 
@@ -188,6 +211,7 @@ const sessionStore: StateCreator<
   setLandmarkResults: (landmarkResults) =>
     set({ landmarkResults }, false, 'session/setLandmarkResults'),
 
+  // ─── Navigation ──────────────────────────────────────────────
   setSelectedLandmark: (selectedLandmark) =>
     set({ selectedLandmark }, false, 'session/setSelectedLandmark'),
 
@@ -203,6 +227,8 @@ const sessionStore: StateCreator<
   setRouteMeta: (routeMeta) =>
     set({ routeMeta }, false, 'session/setRouteMeta'),
 
+  // clearRoute also resets trip state so cancelling before "Start Trip"
+  // leaves no ghost tripStatus behind.
   clearRoute: () =>
     set(
       {
@@ -210,12 +236,53 @@ const sessionStore: StateCreator<
         destinationLocation: null,
         routeGeoJson: null,
         routeMeta: null,
+        tripStatus: 'IDLE',
+        tripStartedAt: null,
         searchState: 'RESULTS_FOUND',
       },
       false,
       'session/clearRoute',
     ),
 
+  // ─── Trip lifecycle ───────────────────────────────────────────
+  startTrip: () =>
+    set(
+      {
+        tripStatus: 'STARTED',
+        tripStartedAt: Date.now(),
+        error: null,
+      },
+      false,
+      'session/startTrip',
+    ),
+
+  pauseTrip: () =>
+    set({ tripStatus: 'PAUSED' }, false, 'session/pauseTrip'),
+
+  // resumeTrip does NOT update tripStartedAt — cumulative trip time is
+  // preserved so the session log captures total elapsed time, not just
+  // the last active leg.
+  resumeTrip: () =>
+    set({ tripStatus: 'STARTED' }, false, 'session/resumeTrip'),
+
+  // endTrip merges clearRoute logic in one atomic update so there is no
+  // intermediate render with a half-reset state.
+  endTrip: () =>
+    set(
+      {
+        tripStatus: 'IDLE',
+        tripStartedAt: null,
+        selectedLandmark: null,
+        destinationLocation: null,
+        routeGeoJson: null,
+        routeMeta: null,
+        searchState: 'RESULTS_FOUND',
+      },
+      false,
+      'session/endTrip',
+    ),
+
+  // ─── Global ──────────────────────────────────────────────────
   setLanguage: (language) => set({ language }, false, 'session/setLanguage'),
 
   setSearchState: (searchState) =>
@@ -262,6 +329,10 @@ export const useRouteGeoJson = () =>
   useSessionStore((s) => s.routeGeoJson)
 export const useRouteMeta = () =>
   useSessionStore((s) => s.routeMeta)
+export const useTripStatus = () =>
+  useSessionStore((s) => s.tripStatus)
+export const useTripStartedAt = () =>
+  useSessionStore((s) => s.tripStartedAt)
 export const useSearchState = () => useSessionStore((s) => s.searchState)
 export const useLanguage = () => useSessionStore((s) => s.language)
 export const useSessionError = () => useSessionStore((s) => s.error)

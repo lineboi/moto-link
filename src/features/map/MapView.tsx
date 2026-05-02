@@ -8,26 +8,21 @@ import Map, {
   Source,
   type MapRef,
 } from 'react-map-gl/maplibre'
-import {
-  Box,
-  Button,
-  HStack,
-  Heading,
-  Spinner,
-  Stack,
-  Text,
-  VStack,
-} from '@chakra-ui/react'
+import { Box, Spinner, Text, VStack } from '@chakra-ui/react'
 import { useGeolocation } from '@/features/map/useGeolocation'
 import { useRouteFetcher } from '@/features/map/useRouteFetcher'
+import { useAudioGuide } from '@/features/map/useAudioGuide'
+import { SessionManagerOverlay } from '@/features/map/SessionManagerOverlay'
+import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import {
   useCurrentLocation,
   useDestinationLocation,
   useLanguage,
-  useRouteMeta,
   useRouteGeoJson,
-  useSelectedLandmark,
+  useTripStatus,
   useSessionStore,
+  type GeoPosition,
+  type TripStatus,
 } from '@/store/useSessionStore'
 
 // ─── Dark tile style ─────────────────────────────────────────────
@@ -79,54 +74,98 @@ function DestinationPin(props: SVGProps<SVGSVGElement>) {
       aria-hidden="true"
       {...props}
     >
-      {/* teardrop body */}
       <path
         d="M18 0C8.06 0 0 8.06 0 18C0 30.6 18 46 18 46C18 46 36 30.6 36 18C36 8.06 27.94 0 18 0Z"
         fill="#FFB300"
       />
-      {/* inner dark dot */}
       <circle cx="18" cy="18" r="8" fill="#030A1A" />
     </svg>
   )
 }
 
-// ─── Bilingual copy ───────────────────────────────────────────────
-const MAP_COPY = {
-  rw: {
-    acquiringGps: 'Turategereza GPS…',
-    gpsError: 'Ikibazo cya GPS',
-    distance: 'Inzira',
-    eta: 'Iminota',
-    cancel: 'Reka urugendo',
-    km: 'km',
-    min: 'min',
-  },
-  en: {
-    acquiringGps: 'Acquiring GPS…',
-    gpsError: 'GPS error',
-    distance: 'Distance',
-    eta: 'ETA',
-    cancel: 'Cancel Route',
-    km: 'km',
-    min: 'min',
-  },
+// ─── GPS overlay copy ─────────────────────────────────────────────
+const GPS_COPY = {
+  rw: { acquiringGps: 'Turategereza GPS…', gpsError: 'Ikibazo cya GPS' },
+  en: { acquiringGps: 'Acquiring GPS…', gpsError: 'GPS error' },
 } as const
+
+// ─── Trip start data captured before endTrip clears the store ────
+interface TripStartData {
+  startLoc: GeoPosition
+  landmarkId: string | null
+}
 
 // ─── MapView ──────────────────────────────────────────────────────
 export function MapView() {
-  // Mount GPS + route hooks — they only run while this component is mounted
+  // ── Active hooks: only run while the map is mounted ─────────────
   const { isLoading: gpsLoading, error: gpsError } = useGeolocation()
   useRouteFetcher()
+  useAudioGuide()
 
   const mapRef = useRef<MapRef>(null)
   const currentLocation = useCurrentLocation()
   const destinationLocation = useDestinationLocation()
   const routeGeoJson = useRouteGeoJson()
-  const routeMeta = useRouteMeta()
-  const selectedLandmark = useSelectedLandmark()
+  const tripStatus = useTripStatus()
   const language = useLanguage()
-  const clearRoute = useSessionStore((s) => s.clearRoute)
-  const t = MAP_COPY[language]
+  const t = GPS_COPY[language]
+
+  // ── Trip lifecycle tracking refs ─────────────────────────────────
+  // Captures the start coords + landmark ID at the moment the trip
+  // begins, before endTrip() can clear selectedLandmark from the store.
+  const tripStartDataRef = useRef<TripStartData | null>(null)
+  const prevTripStatusRef = useRef<TripStatus>(tripStatus)
+
+  // ── Trip transition effect ────────────────────────────────────────
+  useEffect(() => {
+    const prev = prevTripStatusRef.current
+    prevTripStatusRef.current = tripStatus
+
+    if (prev === tripStatus) return
+
+    // Capture start data at the exact moment the trip begins (IDLE → STARTED)
+    if (prev === 'IDLE' && tripStatus === 'STARTED') {
+      const { currentLocation: loc, selectedLandmark } =
+        useSessionStore.getState()
+      if (loc) {
+        tripStartDataRef.current = {
+          startLoc: loc,
+          landmarkId: selectedLandmark?.landmark_id ?? null,
+        }
+      }
+      return
+    }
+
+    // Fire-and-forget Supabase session log when trip ends (STARTED/PAUSED → IDLE)
+    // Note: endTrip() has already cleared selectedLandmark from the store,
+    // so we use the data captured above.
+    if (prev !== 'IDLE' && tripStatus === 'IDLE') {
+      const startData = tripStartDataRef.current
+      if (!startData) return
+
+      const { currentLocation: endLoc } = useSessionStore.getState()
+      tripStartDataRef.current = null
+
+      void (async () => {
+        try {
+          if (!isSupabaseConfigured()) return
+          await supabase.from('navigation_sessions').insert({
+            landmark_id: startData.landmarkId,
+            start_lat: startData.startLoc.lat,
+            start_lng: startData.startLoc.lng,
+            actual_arrival_lat: endLoc?.lat ?? null,
+            actual_arrival_lng: endLoc?.lng ?? null,
+            // 'ABANDONED' until Feature 6 adds arrival-proximity detection;
+            // the DB trigger updates landmark confidence_score on CONFIRMED inserts.
+            status: 'ABANDONED',
+            search_attempts: 1,
+          })
+        } catch {
+          // Background telemetry — never block or alert the driver
+        }
+      })()
+    }
+  }, [tripStatus])
 
   // ── Fly to fit both markers when the first route arrives ─────────
   useEffect(() => {
@@ -145,8 +184,7 @@ export function MapView() {
       ],
       { padding: 80, duration: 1_200, maxZoom: 17 },
     )
-  // Only re-fit when route changes (not on every GPS tick)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeGeoJson])
 
   const initialLat = currentLocation?.lat ?? KIGALI_CENTER.latitude
@@ -194,15 +232,9 @@ export function MapView() {
               flexShrink={0}
               css={{
                 '@keyframes pulse-gps': {
-                  '0%': {
-                    boxShadow: '0 0 0 0 rgba(59, 130, 246, 0.8)',
-                  },
-                  '70%': {
-                    boxShadow: '0 0 0 18px rgba(59, 130, 246, 0)',
-                  },
-                  '100%': {
-                    boxShadow: '0 0 0 0 rgba(59, 130, 246, 0)',
-                  },
+                  '0%': { boxShadow: '0 0 0 0 rgba(59, 130, 246, 0.8)' },
+                  '70%': { boxShadow: '0 0 0 18px rgba(59, 130, 246, 0)' },
+                  '100%': { boxShadow: '0 0 0 0 rgba(59, 130, 246, 0)' },
                 },
                 animation: 'pulse-gps 2s ease-out infinite',
               }}
@@ -278,111 +310,8 @@ export function MapView() {
         </Box>
       )}
 
-      {/* ── Route info panel ─────────────────────────────────────── */}
-      <Box
-        position="absolute"
-        bottom="0"
-        left="0"
-        right="0"
-        bg="rgba(11, 30, 58, 0.94)"
-        backdropFilter="blur(12px)"
-        borderTopWidth="1px"
-        borderColor="rgba(255,179,0,0.25)"
-        px="6"
-        pt="5"
-        pb="8"
-        zIndex={10}
-      >
-        {selectedLandmark && (
-          <Stack gap="4">
-            {/* Landmark name */}
-            <Heading
-              as="h2"
-              size="xl"
-              fontWeight="extrabold"
-              color="white"
-              lineHeight="shorter"
-              css={{
-                display: '-webkit-box',
-                WebkitBoxOrient: 'vertical',
-                WebkitLineClamp: 2,
-                overflow: 'hidden',
-              }}
-            >
-              {selectedLandmark.landmark}
-            </Heading>
-
-            {/* Distance + ETA chips */}
-            {routeMeta ? (
-              <HStack gap="4" wrap="wrap">
-                <MetaChip
-                  label={t.distance}
-                  value={`${routeMeta.distanceKm.toFixed(1)} ${t.km}`}
-                />
-                <MetaChip
-                  label={t.eta}
-                  value={`~${Math.ceil(routeMeta.durationMin)} ${t.min}`}
-                />
-              </HStack>
-            ) : (
-              <HStack gap="2" align="center">
-                <Spinner size="sm" color="#FFB300" />
-                <Text color="rgba(255,255,255,0.6)" fontSize="sm">
-                  Calculating route…
-                </Text>
-              </HStack>
-            )}
-
-            {/* Cancel / Back button */}
-            <Button
-              size="lg"
-              w="full"
-              minH="touchTargetXl"
-              bg="#EF4444"
-              color="white"
-              fontWeight="extrabold"
-              fontSize="lg"
-              letterSpacing="wide"
-              _hover={{ bg: '#DC2626' }}
-              _active={{ transform: 'scale(0.98)' }}
-              onClick={clearRoute}
-              aria-label={t.cancel}
-            >
-              {t.cancel}
-            </Button>
-          </Stack>
-        )}
-      </Box>
-    </Box>
-  )
-}
-
-// ─── Route info chip ──────────────────────────────────────────────
-function MetaChip({ label, value }: { label: string; value: string }) {
-  return (
-    <Box
-      bg="rgba(255,179,0,0.12)"
-      borderWidth="1px"
-      borderColor="rgba(255,179,0,0.35)"
-      borderRadius="lg"
-      px="4"
-      py="2"
-      textAlign="center"
-      minW="100px"
-    >
-      <Text
-        fontSize="2xs"
-        color="rgba(255,179,0,0.7)"
-        fontWeight="bold"
-        letterSpacing="wide"
-        textTransform="uppercase"
-        mb="0.5"
-      >
-        {label}
-      </Text>
-      <Text fontSize="xl" color="white" fontWeight="extrabold" lineHeight="shorter">
-        {value}
-      </Text>
+      {/* ── Session manager (Start / Pause / End Trip) ────────────── */}
+      <SessionManagerOverlay />
     </Box>
   )
 }

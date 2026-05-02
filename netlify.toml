@@ -1,0 +1,23 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# SPA catch-all — must come LAST so asset routes still resolve
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Serve the Workbox service worker with no-cache so updates propagate instantly
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/workbox-*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"

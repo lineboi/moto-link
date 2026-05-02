@@ -14,6 +14,7 @@ import { useState } from 'react'
 import { VoiceRecordButton } from '@/features/voice/VoiceRecordButton'
 import { ColorModeSwitcher } from '@/components/ColorModeSwitcher'
 import { AuthModal } from '@/components/AuthModal'
+import { useAuth } from '@/hooks/useAuth'
 import { ResultsStack } from '@/features/voice/ResultsStack'
 import { useNlpPipeline } from '@/features/voice/useNlpPipeline'
 import { isVoiceCaptureSupported } from '@/features/voice/useVoiceRecorder'
@@ -284,6 +285,7 @@ function App() {
   const isProcessing = searchState === 'PROCESSING'
   const hasResults = searchState === 'RESULTS_FOUND'
   const [authOpen, setAuthOpen] = useState(false)
+  const { user, signOut } = useAuth()
 
   // Full-screen map during navigation — MapView mounts useGeolocation +
   // useRouteFetcher internally so GPS and OSRM only run while navigating.
@@ -323,21 +325,30 @@ function App() {
             size="sm"
             variant="outline"
             borderColor="accent.solid"
-            color="accent.solid"
+            color={user ? 'signal.success' : 'accent.solid'}
             fontWeight="bold"
             borderRadius="full"
             px="4"
             minH="touchTarget"
             onClick={() => setAuthOpen(true)}
             _hover={{ bg: 'accent.muted' }}
+            maxW="36"
+            overflow="hidden"
+            textOverflow="ellipsis"
+            whiteSpace="nowrap"
           >
-            Login / Profile
+            {user ? user.email?.split('@')[0] : 'Login / Profile'}
           </Button>
           <ColorModeSwitcher />
         </HStack>
 
         {/* Auth modal — floats over the page without redirect */}
-        <AuthModal isOpen={authOpen} onClose={() => setAuthOpen(false)} />
+        <AuthModal
+          isOpen={authOpen}
+          onClose={() => setAuthOpen(false)}
+          user={user}
+          onSignOut={signOut}
+        />
       </Flex>
 
       {/* ── Main content ──────────────────────────────────────── */}
